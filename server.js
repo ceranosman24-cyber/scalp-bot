@@ -7,7 +7,7 @@ const WebSocket = require('ws');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-const TN_BASE    = 'https://testnet.binancefuture.com';
+const TN_BASE    = 'https://demo-fapi.binance.com'; // demo.binance.com API
 const API_KEY    = process.env.BINANCE_API_KEY    || '';
 const API_SECRET = process.env.BINANCE_API_SECRET || '';
 const LEVERAGE   = 100;
