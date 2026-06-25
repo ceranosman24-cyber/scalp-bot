@@ -498,106 +498,18 @@ function hasAnyOpenPosition() {
 }
 
 function openPosition(ch, sig) {
-  if (balance <= 0) return;
-  const atr = calcATR(ch.klines);
-  const riskUsd = balance * RISK_PCT;
-  const price = sig.price;
-  const slDist = atr * SL_MULT;
-  const tpDist = atr * TP_MULT;
-  const qty = riskUsd / slDist;
-  const sl = sig.type === 'LONG' ? price - slDist : price + slDist;
-  const tp = sig.type === 'LONG' ? price + tpDist : price - tpDist;
-  ch.position = {
-    type: sig.type, entry: price, qty, sl, tp,
-    risk: riskUsd,
-    ts: new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}),
-  };
-  // Emirler sunucu tarafından gönderiliyor
+  // Emirler sunucu tarafından gönderiliyor, UI sadece gösterim yapıyor
+  // ch.position sunucudan /bot/status ile geliyor
 }
 
-/* En güçlü sinyali bul ve işlem aç */
+/* İşlem açma sunucu tarafından yapılıyor - UI sadece gösterim */
 function pickBestAndOpen() {
-  if (!botRunning) return;
-  if (hasAnyOpenPosition()) return;
-
-  let best = null;
-  Object.values(channels).forEach(ch => {
-    if (ch.position) return;
-    if (ch.cooldown > 0) return;
-    if (ch.klines.length < 30) return;
-    const sig = scoreSignal(ch.klines, ch.srLevels);
-    ch.lastSignal = sig.type;
-    ch.lastScore = sig.score;
-    if (sig.type === 'WAIT') return;
-    if (!best || Math.abs(sig.score) > Math.abs(best.sig.score)) {
-      best = { ch, sig };
-    }
-  });
-
-  if (best) {
-    openPosition(best.ch, best.sig);
-    renderEngineGrid();
-    renderActiveSR(); // re-draw TP/SL lines if active channel
-  }
+  // Sunucu tarafından yönetiliyor
 }
 
 function checkPosition(ch, currentPrice) {
-  if (!ch.position) return;
-  const pos = ch.position;
-  let closed = false, pnl = 0, exitPrice = currentPrice;
-
-  // ── Breakeven: TP yolunun %50'sine gelince SL → giriş fiyatına taşı ──
-  // Yön bazlı kontrol: LONG'da sadece yukarı, SHORT'da sadece aşağı hareket sayılır
-  if (!pos.breakeven) {
-    const beReached = pos.type === 'LONG'
-      ? currentPrice >= pos.entry + (pos.tp - pos.entry) * 0.5
-      : currentPrice <= pos.entry - (pos.entry - pos.tp) * 0.5;
-
-    if (beReached) {
-      pos.sl = pos.entry;  // SL'yi giriş fiyatına çek
-      pos.breakeven = true;
-      // Grafik çizgilerini yenile
-      if (ch.pair === currentPair && ch.tf === currentTF) renderActiveSR();
-      // Engine kartını güncelle
-      renderEngineGrid();
-    }
-  }
-
-  // TP kontrolü SL'den ÖNCE gelir — fiyat TP'deyse BE'ye düşmez
-  if (pos.type === 'LONG') {
-    if (currentPrice >= pos.tp) {
-      pnl = pos.risk * TP_MULT; exitPrice = pos.tp; closed = true;
-    } else if (currentPrice <= pos.sl) {
-      pnl = pos.breakeven ? 0 : -pos.risk;  // BE'de sıfır kayıp
-      exitPrice = pos.sl; closed = true;
-    }
-  } else {
-    if (currentPrice <= pos.tp) {
-      pnl = pos.risk * TP_MULT; exitPrice = pos.tp; closed = true;
-    } else if (currentPrice >= pos.sl) {
-      pnl = pos.breakeven ? 0 : -pos.risk;
-      exitPrice = pos.sl; closed = true;
-    }
-  }
-
-  if (closed) {
-    balance = Math.max(0, balance + pnl);
-    totalPnl += pnl;
-    tradeCount++;
-    if (pnl > 0) wins++;
-    tradeLog.unshift({
-      pair: ch.pair, tf: ch.tf, type: pos.type,
-      entry: pos.entry, exit: exitPrice,
-      pnl, ts: pos.ts,
-      be: pos.breakeven || false,
-    });
-    if (tradeLog.length > 60) tradeLog.pop();
-    ch.position = null;
-    ch.cooldown = 3; // wait 3 candles before re-entry
-    renderBalanceBar();
-    renderTradeLog();
-    renderEngineGrid();
-  }
+  // Pozisyon takibi sunucu tarafından yapılıyor
+  // UI sadece /bot/status'dan gelen veriyi gösteriyor
 }
 
 /* ════════════════════════════════════════
@@ -674,7 +586,6 @@ function runChannelEngine(key) {
   ch.lastSignal = sig.type;
   ch.lastScore = sig.score || 0;
   if (ch.cooldown > 0) ch.cooldown--;
-  pickBestAndOpen();
   renderEngineGrid();
 }
 
@@ -1358,8 +1269,8 @@ async function pollServerStatus() {
         channels[key].lastSignal = srv.lastSignal;
         channels[key].lastScore  = srv.lastScore;
         channels[key].cooldown   = srv.cooldown;
-        if (srv.position) channels[key].position = srv.position;
-        else if (!channels[key].position) channels[key].position = null;
+        // Pozisyon her zaman server'dan gelir
+        channels[key].position = srv.position || null;
       }
     });
     renderEngineGrid();
