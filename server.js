@@ -263,15 +263,11 @@ async function sendOrder(ch, sig) {
   const slDist    = atr * SL_MULT;
   const tpDist    = atr * TP_MULT;
 
-  // Risk bazlı lot: bakiyenin %2'si risk, SL mesafesine göre lot
-  const riskUsd   = balance * 0.02;          // bakiyenin %2'si
-  const atr2      = calcATR(ch.klines);
-  const slDist2   = atr2 * SL_MULT;
-  const rawQty    = riskUsd / slDist2;        // SL mesafesine göre lot
-  const minQty    = Math.max(rawQty, 0.001);  // minimum 0.001
+  // Sabit küçük lot — BTC için 0.002, ETH için 0.02
   const stepSize  = 0.001;
-  const qty       = (Math.floor(minQty/stepSize)*stepSize).toFixed(3);
-  console.log(`[Bot] Lot hesap: risk=$${riskUsd.toFixed(2)} slDist=${slDist2.toFixed(2)} qty=${qty}`);
+  const fixedQty  = symbol.startsWith('BTC') ? 0.002 : 0.02;
+  const qty       = fixedQty.toFixed(3);
+  console.log(`[Bot] Lot: ${qty} ${symbol} (sabit)`);
   if (parseFloat(qty) <= 0) { console.warn('[Bot] Lot 0, emir atlandı'); return false; }
 
   const tickDp = symbol.startsWith('BTC') ? 1 : 2;
