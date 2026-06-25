@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 const TN_BASE    = 'https://demo-fapi.binance.com'; // demo.binance.com API
 const API_KEY    = process.env.BINANCE_API_KEY    || '';
 const API_SECRET = process.env.BINANCE_API_SECRET || '';
-const LEVERAGE   = 100;
+const LEVERAGE   = 10;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -126,7 +126,7 @@ const PAIRS      = ['BTCUSDT', 'ETHUSDT'];
 const TIMEFRAMES = ['1m', '3m', '5m'];
 const RISK_PCT   = 0.05;   // bakiyenin %5'i risk
 const TP_MULT    = 2.0;
-const SL_MULT    = 1.0;
+const SL_MULT    = 2.0;
 const ATR_PERIOD = 14;
 
 let balance    = 0;   // Binance'den çekilecek
