@@ -263,13 +263,16 @@ async function sendOrder(ch, sig) {
   const slDist    = atr * SL_MULT;
   const tpDist    = atr * TP_MULT;
 
-  // Kaldıraç 100x ile lot hesapla
-  const notional  = balance * RISK_PCT * LEVERAGE;  // pozisyon büyüklüğü
-  const rawQty    = notional / price;
-  const minQty    = Math.max(rawQty, 20/price);
-  const stepSize  = symbol.startsWith('BTC') ? 0.001 : 0.001;
+  // Risk bazlı lot: bakiyenin %2'si risk, SL mesafesine göre lot
+  const riskUsd   = balance * 0.02;          // bakiyenin %2'si
+  const atr2      = calcATR(ch.klines);
+  const slDist2   = atr2 * SL_MULT;
+  const rawQty    = riskUsd / slDist2;        // SL mesafesine göre lot
+  const minQty    = Math.max(rawQty, 0.001);  // minimum 0.001
+  const stepSize  = 0.001;
   const qty       = (Math.floor(minQty/stepSize)*stepSize).toFixed(3);
-  if (parseFloat(qty) <= 0) { console.warn('[Bot] Lot 0, emir atlandı'); return; }
+  console.log(`[Bot] Lot hesap: risk=$${riskUsd.toFixed(2)} slDist=${slDist2.toFixed(2)} qty=${qty}`);
+  if (parseFloat(qty) <= 0) { console.warn('[Bot] Lot 0, emir atlandı'); return false; }
 
   const tickDp = symbol.startsWith('BTC') ? 1 : 2;
   const rt = n => parseFloat(n.toFixed(tickDp)).toFixed(tickDp);
