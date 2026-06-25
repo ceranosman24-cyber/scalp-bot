@@ -426,3 +426,37 @@ app.listen(PORT, () => {
   console.log(`🌐 Sunucu: http://localhost:${PORT}`);
   startBot();
 });
+
+// Binance bakiye
+app.get('/bot/bnbalance', async (req, res) => {
+  const acc = await bnRequest('GET', '/fapi/v2/account', {});
+  if (!acc) return res.json({ error: 'Bakiye alınamadı' });
+  const usdt = (acc.assets || []).find(a => a.asset === 'USDT');
+  res.json({
+    wallet: usdt ? parseFloat(usdt.walletBalance).toFixed(2) : '0',
+    unrealized: usdt ? parseFloat(usdt.unrealizedProfit).toFixed(2) : '0',
+    available: usdt ? parseFloat(usdt.availableBalance || usdt.walletBalance).toFixed(2) : '0',
+  });
+});
+
+// Gerçek işlem geçmişi
+app.get('/bot/trades', async (req, res) => {
+  const pairs = ['BTCUSDT', 'ETHUSDT'];
+  const allTrades = [];
+  for (const symbol of pairs) {
+    const data = await bnRequest('GET', '/fapi/v1/userTrades', { symbol, limit: 10 });
+    if (Array.isArray(data)) {
+      data.forEach(t => allTrades.push({
+        symbol: t.symbol,
+        side: t.side,
+        price: parseFloat(t.price).toFixed(2),
+        qty: parseFloat(t.qty),
+        pnl: parseFloat(t.realizedPnl || 0).toFixed(3),
+        time: new Date(t.time).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }),
+        ts: t.time,
+      }));
+    }
+  }
+  allTrades.sort((a, b) => b.ts - a.ts);
+  res.json(allTrades.slice(0, 20));
+});

@@ -215,15 +215,20 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   </div>
   <div class="balance-strip">
     <div class="bal-item">
-      <span class="bal-label">Bakiye</span>
-      <span class="bal-val neutral" id="top-balance">$100.00</span>
+      <span class="bal-label">Binance Bakiye</span>
+      <span class="bal-val neutral" id="top-bnb-balance">—</span>
+    </div>
+    <div class="divider-v"></div>
+    <div class="bal-item">
+      <span class="bal-label">Bot Bakiye</span>
+      <span class="bal-val neutral" id="top-balance">$—</span>
     </div>
     <div class="bal-item">
       <span class="bal-label">Toplam P&L</span>
       <span class="bal-val neutral" id="top-pnl">$0.00</span>
     </div>
     <div class="bal-item">
-      <span class="bal-label">Toplam İşlem</span>
+      <span class="bal-label">İşlem</span>
       <span class="bal-val neutral" id="top-trades">0</span>
     </div>
     <div class="bal-item">
@@ -297,9 +302,16 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
     <!-- Trade Log -->
     <div class="sb-section">
-      <div class="sb-title">İşlem Geçmişi</div>
+      <div class="sb-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>İşlem Geçmişi</span>
+        <span id="trade-count-badge" style="font-size:10px;background:var(--bg4);padding:2px 6px;border-radius:4px;color:var(--text2)">0 işlem</span>
+      </div>
       <div class="trade-list" id="trade-list">
         <div style="font-size:11px;color:var(--text3);padding:4px 0">Henüz işlem yok</div>
+      </div>
+      <div id="real-trade-section" style="margin-top:10px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:6px;">📡 Binance Testnet Geçmişi</div>
+        <div id="real-trade-list" style="font-size:11px;color:var(--text3);">Yükleniyor…</div>
       </div>
     </div>
 
@@ -1355,10 +1367,58 @@ async function pollServerStatus() {
     // Gerçek pozisyonlar
     fetchRealPositions();
 
+    // Binance bakiye
+    fetchBnbBalance();
+
+    // Gerçek işlem geçmişi (her 15sn)
+    if (!pollServerStatus._lastTrade || Date.now() - pollServerStatus._lastTrade > 15000) {
+      pollServerStatus._lastTrade = Date.now();
+      fetchRealTrades();
+    }
+
   } catch(e) {
     const statusEl = document.getElementById('tn-status');
     if (statusEl) statusEl.textContent = '⚠️ Sunucuya ulaşılamıyor';
   }
+}
+
+async function fetchBnbBalance() {
+  try {
+    const r = await fetch('/bot/bnbalance');
+    const d = await r.json();
+    if (d.error) return;
+    const el = document.getElementById('top-bnb-balance');
+    if (!el) return;
+    const unrealized = parseFloat(d.unrealized);
+    el.textContent = '$' + d.wallet;
+    el.className = 'bal-val ' + (unrealized > 0 ? 'up' : unrealized < 0 ? 'down' : 'neutral');
+    el.title = `Kullanılabilir: $${d.available} | Açık PnL: $${d.unrealized}`;
+  } catch(e) {}
+}
+
+async function fetchRealTrades() {
+  try {
+    const r = await fetch('/bot/trades');
+    const trades = await r.json();
+    const el = document.getElementById('real-trade-list');
+    const badge = document.getElementById('trade-count-badge');
+    if (!el) return;
+    if (!trades.length) { el.innerHTML = '<div style="color:var(--text3)">Henüz gerçek işlem yok</div>'; return; }
+    if (badge) badge.textContent = trades.length + ' işlem';
+    el.innerHTML = trades.map(t => {
+      const pnl = parseFloat(t.pnl);
+      const pnlCls = pnl > 0 ? 'color:var(--green)' : pnl < 0 ? 'color:var(--red)' : 'color:var(--text3)';
+      const sideCls = t.side === 'BUY' ? 'color:var(--green)' : 'color:var(--red)';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);">
+        <div>
+          <span style="font-weight:600;font-size:11px">${t.symbol.replace('USDT','/USDT')}</span>
+          <span style="font-size:10px;margin-left:5px;${sideCls}">${t.side}</span>
+          <div style="font-size:10px;color:var(--text3)">${t.time} · $${t.price} · ${t.qty}</div>
+        </div>
+        <div style="font-size:12px;font-weight:700;${pnlCls}">${pnl >= 0 ? '+' : ''}$${t.pnl}</div>
+      </div>`;
+    }).join('');
+  } catch(e) {}
 }
 
 async function serverToggleBot() {
