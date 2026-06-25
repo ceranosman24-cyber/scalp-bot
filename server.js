@@ -285,13 +285,13 @@ async function sendOrder(ch, sig) {
   if (!mkt) { console.error('[Bot] Market emir başarısız'); return; }
   console.log(`[Bot] ✅ Emir OK! ID:${mkt.orderId}`);
 
-  // TP emri
+  // TP emri - TAKE_PROFIT_MARKET
   const tpR = await bnRequest('POST', '/fapi/v1/order', {
-    symbol, side:closeSide, type:'LIMIT', price:tp, quantity:qty, timeInForce:'GTC', reduceOnly:'true',
+    symbol, side:closeSide, type:'TAKE_PROFIT_MARKET', stopPrice:tp, closePosition:'true',
   });
-  // SL emri
+  // SL emri - STOP_MARKET
   const slR = await bnRequest('POST', '/fapi/v1/order', {
-    symbol, side:closeSide, type:'LIMIT', price:sl, quantity:qty, timeInForce:'GTC', reduceOnly:'true',
+    symbol, side:closeSide, type:'STOP_MARKET', stopPrice:sl, closePosition:'true',
   });
 
   // Açık emir ID'lerini sakla (pozisyon kapanınca iptal için)
