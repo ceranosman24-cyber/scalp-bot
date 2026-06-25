@@ -312,7 +312,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
     </div>
 
     <!-- Gerçek Testnet Pozisyonları -->
-    <div class="sb-section" id="realpos-section" style="display:none;">
+    <div class="sb-section" id="realpos-section">
       <div class="sb-title">📡 Gerçek Pozisyonlar (Testnet)</div>
       <div class="pos-panel" id="pos-panel">
         <div class="pos-empty">Bağlantı bekleniyor…</div>
@@ -320,28 +320,22 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       <div class="pos-refresh" id="pos-refresh"></div>
     </div>
 
-    <!-- Testnet -->
+    <!-- Sunucu Durumu -->
     <div class="sb-section">
-      <div class="sb-title">🔗 Binance Testnet</div>
+      <div class="sb-title">🔗 Sunucu Durumu</div>
       <div class="tn-panel">
-        <div class="tn-row" style="display:none;">
-          <input class="tn-input" id="tn-proxy" type="text" value="/api/binance" autocomplete="off" style="font-size:10px;"/>
-        </div>
-        <div class="tn-row">
-          <input class="tn-input" id="tn-key" type="password" placeholder="API Key" autocomplete="off"/>
-        </div>
-        <div class="tn-row">
-          <input class="tn-input" id="tn-secret" type="password" placeholder="API Secret" autocomplete="off"/>
-        </div>
         <div class="tn-row" style="justify-content:space-between;">
-          <span class="tn-status" id="tn-status">⚪ Bağlı değil</span>
+          <span class="tn-status" id="tn-status">⏳ Yükleniyor…</span>
           <div style="display:flex;gap:5px;">
             <button class="tn-btn test" onclick="tnTestOrder()">🧪 Test</button>
-            <button class="tn-btn connect" id="tn-toggle-btn" onclick="tnToggle()">Bağla</button>
+            <button class="tn-btn connect" id="tn-toggle-btn" onclick="serverToggleBot()">Durdur</button>
           </div>
         </div>
+        <div style="font-size:10px;color:var(--text3);padding:4px 2px;">
+          API Key sunucuda tanımlı — tarayıcıda girmeye gerek yok.
+        </div>
         <div class="tn-log" id="tn-log">
-          <div class="tn-log-line">API key girin ve Bağla'ya tıklayın.</div>
+          <div class="tn-log-line">Sunucu ile bağlantı kuruluyor…</div>
         </div>
       </div>
     </div>
@@ -1040,7 +1034,7 @@ function proxyWrap(url) {
 
 function tnProxyUrl() { return '/api/binance'; }
 
-let tnActive = false;
+let tnActive = true; // Sunucu modunda her zaman aktif
 
 function tnKey()    { return document.getElementById('tn-key').value.trim(); }
 function tnSecret() { return document.getElementById('tn-secret').value.trim(); }
@@ -1315,7 +1309,73 @@ function stopPositionPolling() {
   document.getElementById('realpos-section').style.display = 'none';
 }
 
-window.addEventListener('load', init);
+
+/* ════════════════════════════════════════
+   SUNUCU POLLING — Dashboard sunucudan güncellenir
+════════════════════════════════════════ */
+async function pollServerStatus() {
+  try {
+    const r = await fetch('/bot/status');
+    const d = await r.json();
+
+    // API durumu
+    const statusEl = document.getElementById('tn-status');
+    const btnEl    = document.getElementById('tn-toggle-btn');
+    if (d.apiReady) {
+      statusEl.textContent = d.running ? '🟢 Aktif (7/24)' : '🔴 Durduruldu';
+      statusEl.style.color = d.running ? 'var(--green)' : 'var(--red)';
+    } else {
+      statusEl.textContent = '⚠️ API Key yok (sinyal modu)';
+      statusEl.style.color = 'var(--yellow)';
+    }
+    btnEl.textContent = d.running ? 'Durdur' : 'Başlat';
+    btnEl.className   = d.running ? 'tn-btn close' : 'tn-btn connect';
+
+    // Bakiye
+    balance    = d.balance;
+    totalPnl   = d.totalPnl;
+    tradeCount = d.tradeCount;
+    wins       = d.wins;
+    tradeLog   = d.tradeLog || [];
+    renderBalanceBar();
+    renderTradeLog();
+
+    // Kanallar
+    Object.keys(d.channels || {}).forEach(key => {
+      const srv = d.channels[key];
+      if (channels[key]) {
+        channels[key].lastSignal = srv.lastSignal;
+        channels[key].lastScore  = srv.lastScore;
+        channels[key].cooldown   = srv.cooldown;
+        if (srv.position) channels[key].position = srv.position;
+        else if (!channels[key].position) channels[key].position = null;
+      }
+    });
+    renderEngineGrid();
+
+    // Gerçek pozisyonlar
+    fetchRealPositions();
+
+  } catch(e) {
+    const statusEl = document.getElementById('tn-status');
+    if (statusEl) statusEl.textContent = '⚠️ Sunucuya ulaşılamıyor';
+  }
+}
+
+async function serverToggleBot() {
+  try {
+    const r = await fetch('/bot/toggle', { method: 'POST' });
+    const d = await r.json();
+    tnLog(d.running ? '▶️ Bot başlatıldı' : '⏹ Bot durduruldu', d.running ? 'ok' : 'warn');
+    pollServerStatus();
+  } catch(e) { tnLog('❌ Sunucuya ulaşılamadı', 'err'); }
+}
+
+// ── Stub'lar (eski fonksiyonlar bozulmasın) ──────────────────
+function tnKey()    { return ''; }
+function tnSecret() { return ''; }
+
+window.addEventListener('load', () => { init(); setInterval(pollServerStatus, 5000); pollServerStatus(); });
 </script>
 </body>
 </html>
