@@ -390,20 +390,31 @@ function pickBestAndOpen() {
 
 // ── Kline & WebSocket ─────────────────────────────────────────
 async function fetchKlines(ch) {
-  try {
-    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${ch.pair}&interval=${ch.tf}&limit=200`);
-    const data = await r.json();
-    if (!Array.isArray(data)) return;
-    ch.klines = data.map(k=>({ time:Math.floor(k[0]/1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]), volume:parseFloat(k[5]) }));
-    const {supports,resistances}=calcSRLevels(ch.klines);
-    ch.srLevels=[...supports.map(s=>({...s,type:'support'})),...resistances.map(r=>({...r,type:'resist'}))];
-  } catch(e) { console.error(`[fetchKlines] ${ch.pair} ${ch.tf}`, e.message); }
+  const urls = [
+    `https://fapi.binance.com/fapi/v1/klines?symbol=${ch.pair}&interval=${ch.tf}&limit=200`,
+    `https://api.binance.com/api/v3/klines?symbol=${ch.pair}&interval=${ch.tf}&limit=200`,
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const data = await r.json();
+      if (!Array.isArray(data) || data.length === 0) { console.warn(`[fetchKlines] ${ch.pair} ${ch.tf} boş yanıt`); continue; }
+      ch.klines = data.map(k=>({ time:Math.floor(k[0]/1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]), volume:parseFloat(k[5]) }));
+      const {supports,resistances}=calcSRLevels(ch.klines);
+      ch.srLevels=[...supports.map(s=>({...s,type:'support'})),...resistances.map(r=>({...r,type:'resist'}))];
+      console.log(`[fetchKlines] OK ${ch.pair} ${ch.tf} — ${ch.klines.length} kline`);
+      return;
+    } catch(e) { console.error(`[fetchKlines] HATA ${ch.pair} ${ch.tf}:`, e.message); }
+  }
+  console.error(`[fetchKlines] TUM URL BASARISIZ ${ch.pair} ${ch.tf}`);
 }
 
 function connectWS(key) {
   const ch=channels[key];
   if (ch.ws) { try { ch.ws.terminate(); } catch(_) {} }
-  const ws=new WebSocket(`wss://stream.binance.com:9443/ws/${ch.pair.toLowerCase()}@kline_${ch.tf}`);
+  const wsUrl = `wss://fstream.binance.com/ws/${ch.pair.toLowerCase()}@kline_${ch.tf}`;
+  console.log(`[WS] Bağlanıyor: ${wsUrl}`);
+  const ws=new WebSocket(wsUrl);
   ch.ws=ws;
   ws.on('message',(raw)=>{
     try {
