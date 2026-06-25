@@ -226,8 +226,8 @@ function scoreSignal(klines, srLevels) {
   if(nearSup.length){score+=2;reasons.push('Destek');}
   if(nearRes.length){score-=2;reasons.push('Direnç');}
   let type='WAIT';
-  if(score>=1.5)type='LONG';
-  if(score<=-1.5)type='SHORT';
+  if(score>=1.0)type='LONG';
+  if(score<=-1.0)type='SHORT';
   return {type,score,rsi,hist,v9,v21,reasons,price};
 }
 
@@ -366,17 +366,26 @@ function checkPosition(ch, currentPrice) {
 }
 
 function pickBestAndOpen() {
-  console.log(`[Bot] pickBest çalıştı — botRunning:${botRunning} açıkPozisyon:${hasAnyOpenPosition()}`);
+  console.log(`[Bot] pickBest çalıştı — botRunning:${botRunning} açıkPozisyon:${hasAnyOpenPosition()} balance:$${balance.toFixed(2)}`);
   if (!botRunning || hasAnyOpenPosition()) return;
   let best=null;
   Object.values(channels).forEach(ch => {
-    if (ch.position||ch.cooldown>0||ch.klines.length<30) return;
+    const chKey = `${ch.pair}_${ch.tf}`;
+    if (ch.position) { console.log(`[Bot] ${chKey} — pozisyon var, atlandı`); return; }
+    if (ch.cooldown>0) { console.log(`[Bot] ${chKey} — cooldown:${ch.cooldown}, atlandı`); return; }
+    if (ch.klines.length<30) { console.log(`[Bot] ${chKey} — yetersiz kline:${ch.klines.length}, atlandı`); return; }
     const sig=scoreSignal(ch.klines,ch.srLevels);
     ch.lastSignal=sig.type; ch.lastScore=sig.score;
+    console.log(`[Bot] ${chKey} — score:${sig.score.toFixed(2)} signal:${sig.type} RSI:${sig.rsi?.toFixed(1)} reasons:[${sig.reasons?.join(',')}]`);
     if (sig.type==='WAIT') return;
     if (!best||Math.abs(sig.score)>Math.abs(best.sig.score)) best={ch,sig};
   });
-  if (best) openPosition(best.ch, best.sig);
+  if (best) {
+    console.log(`[Bot] 🏆 En iyi sinyal: ${best.ch.pair}_${best.ch.tf} ${best.sig.type} score:${best.sig.score.toFixed(2)}`);
+    openPosition(best.ch, best.sig);
+  } else {
+    console.log(`[Bot] ⏳ Hiçbir kanaldan LONG/SHORT sinyali yok`);
+  }
 }
 
 // ── Kline & WebSocket ─────────────────────────────────────────
