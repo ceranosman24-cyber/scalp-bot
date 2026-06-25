@@ -327,7 +327,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
         <div class="tn-row" style="justify-content:space-between;">
           <span class="tn-status" id="tn-status">⏳ Yükleniyor…</span>
           <div style="display:flex;gap:5px;">
-            <button class="tn-btn test" onclick="tnTestOrder()">🧪 Test</button>
+            <button class="tn-btn test" onclick="serverTestOrder()">🧪 Test</button>
             <button class="tn-btn connect" id="tn-toggle-btn" onclick="serverToggleBot()">Durdur</button>
           </div>
         </div>
@@ -500,8 +500,7 @@ function openPosition(ch, sig) {
     risk: riskUsd,
     ts: new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}),
   };
-  // Testnet aktifse gerçek emir gönder
-  tnSendTrade(ch, sig);
+  // Emirler sunucu tarafından gönderiliyor
 }
 
 /* En güçlü sinyali bul ve işlem aç */
@@ -1372,8 +1371,49 @@ async function serverToggleBot() {
 }
 
 // ── Stub'lar (eski fonksiyonlar bozulmasın) ──────────────────
-function tnKey()    { return ''; }
-function tnSecret() { return ''; }
+function tnKey()    { return 'SERVER'; }
+function tnSecret() { return 'SERVER'; }
+function tnProxyUrl() { return '/api/binance'; }
+
+// Test emrini sunucu üzerinden gönder
+async function serverTestOrder() {
+  tnLog('🧪 Sunucuya test emri gönderiliyor…', 'warn');
+  try {
+    const r = await fetch('/bot/test', { method: 'POST' });
+    const d = await r.json();
+    if (d.success) tnLog('✅ Test emri başarılı! ' + (d.msg || ''), 'ok');
+    else tnLog('❌ Test emri başarısız: ' + (d.error || ''), 'err');
+  } catch(e) { tnLog('❌ Sunucuya ulaşılamadı: ' + e.message, 'err'); }
+}
+
+// Pozisyon sorgusunu sunucu proxy üzerinden yap
+async function fetchRealPositions() {
+  try {
+    const r = await fetch('/bot/positions');
+    const data = await r.json();
+    const panel = document.getElementById('pos-panel');
+    const refresh = document.getElementById('pos-refresh');
+    if (!data || data.error) { panel.innerHTML = '<div class="pos-empty">Sunucuya bağlanılamadı</div>'; return; }
+    const open = data.filter(p => parseFloat(p.positionAmt) !== 0);
+    if (open.length === 0) { panel.innerHTML = '<div class="pos-empty">Açık pozisyon yok</div>'; }
+    else {
+      panel.innerHTML = open.map(p => {
+        const amt = parseFloat(p.positionAmt), isLong = amt > 0;
+        const pnl = parseFloat(p.unRealizedProfit), entry = parseFloat(p.entryPrice);
+        const mark = parseFloat(p.markPrice), liq = parseFloat(p.liquidationPrice);
+        const leverage = p.leverage;
+        const roe = entry > 0 ? ((mark - entry) / entry * 100 * (isLong ? 1 : -1) * parseFloat(leverage)).toFixed(2) : '—';
+        const side = isLong ? 'LONG' : 'SHORT';
+        return `<div class="pos-card ${isLong ? 'long' : 'short'}">
+          <div class="pos-header"><span class="pos-symbol">${p.symbol}</span><span class="pos-side ${isLong ? 'long' : 'short'}">${side} ${leverage}x</span></div>
+          <div class="pos-pnl ${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(2)} <span style="font-size:11px">(${pnl >= 0 ? '+' : ''}${roe}% ROE)</span></div>
+          <div class="pos-detail"><span>Giriş: $${entry.toFixed(2)}</span><span>Mark: $${mark.toFixed(2)}</span><span>Liq: $${liq.toFixed(2)}</span></div>
+        </div>`;
+      }).join('');
+    }
+    if (refresh) refresh.textContent = 'Son güncelleme: ' + new Date().toLocaleTimeString('tr-TR');
+  } catch(e) {}
+}
 
 window.addEventListener('load', () => { init(); setInterval(pollServerStatus, 5000); pollServerStatus(); });
 </script>

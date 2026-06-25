@@ -79,6 +79,28 @@ app.post('/bot/toggle', (req, res) => {
   res.json({ running: botRunning });
 });
 
+app.post('/bot/test', async (req, res) => {
+  try {
+    const pr = await fetch(`${TN_BASE}/fapi/v1/ticker/price?symbol=ETHUSDT`);
+    const pd = await pr.json();
+    const price = parseFloat(pd.price);
+    await bnRequest('POST', '/fapi/v1/leverage', { symbol: 'ETHUSDT', leverage: 10 });
+    const mkt = await bnRequest('POST', '/fapi/v1/order', { symbol: 'ETHUSDT', side: 'BUY', type: 'MARKET', quantity: '0.02' });
+    if (!mkt) return res.json({ success: false, error: 'Emir gönderilemedi' });
+    const tp = (price * 1.01).toFixed(2);
+    const sl = (price * 0.995).toFixed(2);
+    await bnRequest('POST', '/fapi/v1/order', { symbol: 'ETHUSDT', side: 'SELL', type: 'LIMIT', price: tp, quantity: '0.02', timeInForce: 'GTC', reduceOnly: 'true' });
+    await bnRequest('POST', '/fapi/v1/order', { symbol: 'ETHUSDT', side: 'SELL', type: 'LIMIT', price: sl, quantity: '0.02', timeInForce: 'GTC', reduceOnly: 'true' });
+    res.json({ success: true, msg: `ETHUSDT BUY @ $${price.toFixed(2)} | ID: ${mkt.orderId}` });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+app.get('/bot/positions', async (req, res) => {
+  const data = await bnRequest('GET', '/fapi/v2/positionRisk', {});
+  if (!data) return res.json({ error: 'Pozisyon alınamadı' });
+  res.json(data);
+});
+
 /* ════════════════════════════════════════════════════════════
    TRADING ENGINE — tüm mantık sunucuda
 ════════════════════════════════════════════════════════════ */
