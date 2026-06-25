@@ -321,6 +321,7 @@ async function cancelOpenOrders(chKey) {
 function hasAnyOpenPosition() { return Object.values(channels).some(c=>c.position); }
 
 function openPosition(ch, sig) {
+  console.log(`[Bot] openPosition çağrıldı: ${ch.pair} ${sig.type} balance=$${balance.toFixed(2)}`);
   if (balance <= 0) return;
   const atr     = calcATR(ch.klines);
   const riskUsd = balance * RISK_PCT;
@@ -365,6 +366,7 @@ function checkPosition(ch, currentPrice) {
 }
 
 function pickBestAndOpen() {
+  console.log(`[Bot] pickBest çalıştı — botRunning:${botRunning} açıkPozisyon:${hasAnyOpenPosition()}`);
   if (!botRunning || hasAnyOpenPosition()) return;
   let best=null;
   Object.values(channels).forEach(ch => {
