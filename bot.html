@@ -639,21 +639,26 @@ function renderActiveSR() {
   ch.srLevels.filter(s => s.type === 'resist').slice(0,4).forEach((r, i) => {
     srLines.push(candleSeries.createPriceLine({ price: r.level, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: `R${i+1}` }));
   });
-  // Position lines
-  const pos = ch.position;
+  // Pozisyonu bul — önce bu kanalda, yoksa aynı pair'deki başka kanalda
+  let pos = ch.position;
+  if (!pos) {
+    const sameP = Object.values(channels).find(c => c.pair === ch.pair && c.position);
+    if (sameP) pos = sameP.position;
+  }
   if (pos) {
     srLines.push(candleSeries.createPriceLine({ price: pos.entry, color: '#3b82f6', lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: pos.type === 'LONG' ? '▲ GİRİŞ' : '▼ GİRİŞ' }));
     srLines.push(candleSeries.createPriceLine({ price: pos.tp,    color: '#22c55e', lineWidth: 2, lineStyle: 1, axisLabelVisible: true, title: '✔ TP' }));
     srLines.push(candleSeries.createPriceLine({ price: pos.sl,    color: '#ef4444', lineWidth: 2, lineStyle: 1, axisLabelVisible: true, title: '✖ SL' }));
-    // Giriş marker'ı (ok)
-    const lastCandle = ch.klines[ch.klines.length - 1];
-    if (lastCandle) {
+    // Giriş anındaki mumu bul
+    const entryCandle = ch.klines.slice().reverse().find(k => Math.abs(k.close - pos.entry) / pos.entry < 0.002);
+    const markerCandle = entryCandle || ch.klines[ch.klines.length - 1];
+    if (markerCandle) {
       candleSeries.setMarkers([{
-        time: lastCandle.time,
+        time: markerCandle.time,
         position: pos.type === 'LONG' ? 'belowBar' : 'aboveBar',
         color: pos.type === 'LONG' ? '#22c55e' : '#ef4444',
         shape: pos.type === 'LONG' ? 'arrowUp' : 'arrowDown',
-        text: pos.type === 'LONG' ? 'AL' : 'SAT',
+        text: pos.type === 'LONG' ? '▲ AL' : '▼ SAT',
         size: 2,
       }]);
     }
