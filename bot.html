@@ -543,7 +543,7 @@ function connectChannelWS(key) {
   const ch = channels[key];
   if (ch.ws) { try { ch.ws.close(); } catch(e) {} }
   const stream = `${ch.pair.toLowerCase()}@kline_${ch.tf}`;
-  const socket = new WebSocket(`wss://stream.binance.com:9443/ws/${stream}`);
+  const socket = new WebSocket(`wss://fstream.binance.com/ws/${stream}`);
   ch.ws = socket;
   socket.onmessage = (e) => {
     const d = JSON.parse(e.data);
@@ -671,7 +671,8 @@ function renderActiveSR() {
 function renderActiveAI() {
   const ch = channels[chKey()];
   if (ch.klines.length < 30) return;
-  // sig sunucudan geliyor
+  // sig sunucudan /bot/status ile geliyor
+  const sig = { type: ch.lastSignal || 'WAIT', score: ch.lastScore || 0, reasons: ch.lastReasons || [], rsi: ch.lastRsi, hist: ch.lastHist, v9: ch.lastV9, v21: ch.lastV21 };
   const maxScore = 7;
   const strength = Math.round(Math.abs(Math.max(-maxScore, Math.min(maxScore, sig.score))) / maxScore * 5);
   let label, cls;
