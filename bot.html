@@ -543,8 +543,7 @@ function connectChannelWS(key) {
   const ch = channels[key];
   if (ch.ws) { try { ch.ws.close(); } catch(e) {} }
   const stream = `${ch.pair.toLowerCase()}@kline_${ch.tf}`;
-  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const socket = new WebSocket(`${wsProto}//${location.host}/ws/${stream}`);
+  const socket = new WebSocket(`wss://stream.binance.com:9443/ws/${stream}`);
   ch.ws = socket;
   socket.onmessage = (e) => {
     const d = JSON.parse(e.data);
