@@ -125,8 +125,8 @@ app.get('/bot/trades', async (req, res) => {
 const PAIRS      = ['BTCUSDT', 'ETHUSDT'];
 const TIMEFRAMES = ['1m', '3m', '5m'];
 const RISK_PCT   = 0.05;   // bakiyenin %5'i risk
-const TP_MULT    = 2.0;
-const SL_MULT    = 2.0;
+const TP_MULT    = 2.0; // 1:2 RR — TP her zaman SL'nin 2 katı
+const SL_MULT    = 1.5; // SL = 1.5x ATR
 const ATR_PERIOD = 14;
 
 let balance    = 0;   // Binance'den çekilecek
@@ -263,11 +263,14 @@ async function sendOrder(ch, sig) {
   const slDist    = atr * SL_MULT;
   const tpDist    = atr * TP_MULT;
 
-  // Sabit küçük lot — BTC için 0.002, ETH için 0.02
-  const stepSize  = 0.001;
-  const fixedQty  = symbol.startsWith('BTC') ? 0.002 : 0.02;
-  const qty       = fixedQty.toFixed(3);
-  console.log(`[Bot] Lot: ${qty} ${symbol} (sabit)`);
+  // 1:2 RR sistemi — bakiyenin %10'u risk, kazanç %20
+  const riskUsd  = balance * 0.10;                   // örn $4200 → $420 risk
+  const atr2     = calcATR(ch.klines);
+  const slDist   = atr2 * SL_MULT;                   // ATR bazlı SL mesafesi ($ cinsinden)
+  const rawQty   = riskUsd / slDist;                 // lot = risk / SL mesafesi
+  const stepSize = symbol.startsWith('BTC') ? 0.001 : 0.001;
+  const qty      = (Math.floor(rawQty / stepSize) * stepSize).toFixed(3);
+  console.log(`[Bot] RR Lot: risk=$${riskUsd.toFixed(0)} slDist=$${slDist.toFixed(2)} qty=${qty} ${symbol}`);
   if (parseFloat(qty) <= 0) { console.warn('[Bot] Lot 0, emir atlandı'); return false; }
 
   const tickDp = symbol.startsWith('BTC') ? 1 : 2;

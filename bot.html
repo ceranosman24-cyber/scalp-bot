@@ -582,9 +582,7 @@ function connectChannelWS(key) {
 function runChannelEngine(key) {
   const ch = channels[key];
   if (ch.klines.length < 30) return;
-  const sig = scoreSignal(ch.klines, ch.srLevels);
-  ch.lastSignal = sig.type;
-  ch.lastScore = sig.score || 0;
+  // lastSignal ve lastScore sunucudan /bot/status ile geliyor
   if (ch.cooldown > 0) ch.cooldown--;
   renderEngineGrid();
 }
@@ -654,7 +652,7 @@ function renderActiveSR() {
 function renderActiveAI() {
   const ch = channels[chKey()];
   if (ch.klines.length < 30) return;
-  const sig = scoreSignal(ch.klines, ch.srLevels);
+  // sig sunucudan geliyor
   const maxScore = 7;
   const strength = Math.round(Math.abs(Math.max(-maxScore, Math.min(maxScore, sig.score))) / maxScore * 5);
   let label, cls;
@@ -873,9 +871,7 @@ function livePnlTick() {
     Object.keys(channels).forEach(key => {
       const ch = channels[key];
       if (!ch.klines.length || ch.cooldown > 0) return;
-      const sig = scoreSignal(ch.klines, ch.srLevels);
-      ch.lastSignal = sig.type;
-      ch.lastScore = sig.score;
+      // lastSignal ve lastScore sunucudan geliyor
       if (sig.type !== 'WAIT' && (!best || Math.abs(sig.score) > Math.abs(best.sig.score))) {
         best = { ch, sig };
       }
