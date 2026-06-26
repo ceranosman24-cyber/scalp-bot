@@ -324,7 +324,11 @@ async function cancelOpenOrders(chKey) {
 }
 
 // ── Trading engine ────────────────────────────────────────────
-function hasAnyOpenPosition() { return Object.values(channels).some(c=>c.position); }
+// Binance'deki gerçek açık pozisyon sayısı
+let binanceOpenPositions = 0;
+function hasAnyOpenPosition() { 
+  return binanceOpenPositions > 0 || Object.values(channels).some(c=>c.position); 
+}
 
 async function openPosition(ch, sig) {
   console.log(`[Bot] openPosition çağrıldı: ${ch.pair} ${sig.type} balance=$${balance.toFixed(2)}`);
@@ -349,6 +353,13 @@ async function openPosition(ch, sig) {
 }
 
 async function checkPositionFromBinance() {
+  // Binance'deki tüm açık pozisyonları say
+  try {
+    const all = await bnRequest('GET', '/fapi/v2/positionRisk', {});
+    if (Array.isArray(all)) {
+      binanceOpenPositions = all.filter(p => parseFloat(p.positionAmt) !== 0).length;
+    }
+  } catch(e) {}
   for (const key of Object.keys(channels)) {
     const ch = channels[key];
     if (!ch.position) continue;
