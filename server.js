@@ -266,11 +266,11 @@ async function sendOrder(ch, sig) {
   // 1:2 RR sistemi — bakiyenin %10'u risk, kazanç %20
   const riskUsd  = balance * 0.10;                   // örn $4200 → $420 risk
   const atr2     = calcATR(ch.klines);
-  const slDist   = atr2 * SL_MULT;                   // ATR bazlı SL mesafesi ($ cinsinden)
-  const rawQty   = riskUsd / slDist;                 // lot = risk / SL mesafesi
+  const slDist2  = atr2 * SL_MULT;                   // ATR bazlı SL mesafesi ($ cinsinden)
+  const rawQty   = riskUsd / slDist2;                 // lot = risk / SL mesafesi
   const stepSize = symbol.startsWith('BTC') ? 0.001 : 0.001;
   const qty      = (Math.floor(rawQty / stepSize) * stepSize).toFixed(3);
-  console.log(`[Bot] RR Lot: risk=$${riskUsd.toFixed(0)} slDist=$${slDist.toFixed(2)} qty=${qty} ${symbol}`);
+  console.log(`[Bot] RR Lot: risk=$${riskUsd.toFixed(0)} slDist=$${slDist2.toFixed(2)} qty=${qty} ${symbol}`);
   if (parseFloat(qty) <= 0) { console.warn('[Bot] Lot 0, emir atlandı'); return false; }
 
   const tickDp = symbol.startsWith('BTC') ? 1 : 2;
