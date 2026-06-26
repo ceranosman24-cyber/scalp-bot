@@ -4,8 +4,21 @@ const path      = require('path');
 const crypto    = require('crypto');
 const WebSocket = require('ws');
 
-const app  = express();
-const PORT = process.env.PORT || 3000;
+const app        = express();
+const http       = require('http');
+const { WebSocketServer } = require('ws');
+const httpServer = http.createServer(app);
+const wss        = new WebSocketServer({ server: httpServer, path: '/ws' });
+const PORT       = process.env.PORT || 3000;
+
+// WebSocket proxy — tarayıcıdan gelen bağlantıyı Binance'e ilet
+wss.on('connection', (client, req) => {
+  const stream = req.url.replace('/ws/', '');
+  const binWs  = new WebSocket(`wss://fstream.binance.com/ws/${stream}`);
+  binWs.on('message', d => { if (client.readyState === 1) client.send(d.toString()); });
+  binWs.on('close', () => { try { client.close(); } catch(_) {} });
+  client.on('close', () => { try { binWs.close(); } catch(_) {} });
+});
 
 const TN_BASE    = 'https://demo-fapi.binance.com'; // demo.binance.com API
 const API_KEY    = process.env.BINANCE_API_KEY    || '';
