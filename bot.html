@@ -498,106 +498,18 @@ function hasAnyOpenPosition() {
 }
 
 function openPosition(ch, sig) {
-  if (balance <= 0) return;
-  const atr = calcATR(ch.klines);
-  const riskUsd = balance * RISK_PCT;
-  const price = sig.price;
-  const slDist = atr * SL_MULT;
-  const tpDist = atr * TP_MULT;
-  const qty = riskUsd / slDist;
-  const sl = sig.type === 'LONG' ? price - slDist : price + slDist;
-  const tp = sig.type === 'LONG' ? price + tpDist : price - tpDist;
-  ch.position = {
-    type: sig.type, entry: price, qty, sl, tp,
-    risk: riskUsd,
-    ts: new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}),
-  };
-  // Emirler sunucu tarafından gönderiliyor
+  // Emirler sunucu tarafından gönderiliyor, UI sadece gösterim yapıyor
+  // ch.position sunucudan /bot/status ile geliyor
 }
 
-/* En güçlü sinyali bul ve işlem aç */
+/* İşlem açma sunucu tarafından yapılıyor - UI sadece gösterim */
 function pickBestAndOpen() {
-  if (!botRunning) return;
-  if (hasAnyOpenPosition()) return;
-
-  let best = null;
-  Object.values(channels).forEach(ch => {
-    if (ch.position) return;
-    if (ch.cooldown > 0) return;
-    if (ch.klines.length < 30) return;
-    const sig = scoreSignal(ch.klines, ch.srLevels);
-    ch.lastSignal = sig.type;
-    ch.lastScore = sig.score;
-    if (sig.type === 'WAIT') return;
-    if (!best || Math.abs(sig.score) > Math.abs(best.sig.score)) {
-      best = { ch, sig };
-    }
-  });
-
-  if (best) {
-    openPosition(best.ch, best.sig);
-    renderEngineGrid();
-    renderActiveSR(); // re-draw TP/SL lines if active channel
-  }
+  // Sunucu tarafından yönetiliyor
 }
 
 function checkPosition(ch, currentPrice) {
-  if (!ch.position) return;
-  const pos = ch.position;
-  let closed = false, pnl = 0, exitPrice = currentPrice;
-
-  // ── Breakeven: TP yolunun %50'sine gelince SL → giriş fiyatına taşı ──
-  // Yön bazlı kontrol: LONG'da sadece yukarı, SHORT'da sadece aşağı hareket sayılır
-  if (!pos.breakeven) {
-    const beReached = pos.type === 'LONG'
-      ? currentPrice >= pos.entry + (pos.tp - pos.entry) * 0.5
-      : currentPrice <= pos.entry - (pos.entry - pos.tp) * 0.5;
-
-    if (beReached) {
-      pos.sl = pos.entry;  // SL'yi giriş fiyatına çek
-      pos.breakeven = true;
-      // Grafik çizgilerini yenile
-      if (ch.pair === currentPair && ch.tf === currentTF) renderActiveSR();
-      // Engine kartını güncelle
-      renderEngineGrid();
-    }
-  }
-
-  // TP kontrolü SL'den ÖNCE gelir — fiyat TP'deyse BE'ye düşmez
-  if (pos.type === 'LONG') {
-    if (currentPrice >= pos.tp) {
-      pnl = pos.risk * TP_MULT; exitPrice = pos.tp; closed = true;
-    } else if (currentPrice <= pos.sl) {
-      pnl = pos.breakeven ? 0 : -pos.risk;  // BE'de sıfır kayıp
-      exitPrice = pos.sl; closed = true;
-    }
-  } else {
-    if (currentPrice <= pos.tp) {
-      pnl = pos.risk * TP_MULT; exitPrice = pos.tp; closed = true;
-    } else if (currentPrice >= pos.sl) {
-      pnl = pos.breakeven ? 0 : -pos.risk;
-      exitPrice = pos.sl; closed = true;
-    }
-  }
-
-  if (closed) {
-    balance = Math.max(0, balance + pnl);
-    totalPnl += pnl;
-    tradeCount++;
-    if (pnl > 0) wins++;
-    tradeLog.unshift({
-      pair: ch.pair, tf: ch.tf, type: pos.type,
-      entry: pos.entry, exit: exitPrice,
-      pnl, ts: pos.ts,
-      be: pos.breakeven || false,
-    });
-    if (tradeLog.length > 60) tradeLog.pop();
-    ch.position = null;
-    ch.cooldown = 3; // wait 3 candles before re-entry
-    renderBalanceBar();
-    renderTradeLog();
-    renderEngineGrid();
-  }
+  // Pozisyon takibi sunucu tarafından yapılıyor
+  // UI sadece /bot/status'dan gelen veriyi gösteriyor
 }
 
 /* ════════════════════════════════════════
@@ -670,11 +582,8 @@ function connectChannelWS(key) {
 function runChannelEngine(key) {
   const ch = channels[key];
   if (ch.klines.length < 30) return;
-  const sig = scoreSignal(ch.klines, ch.srLevels);
-  ch.lastSignal = sig.type;
-  ch.lastScore = sig.score || 0;
+  // lastSignal ve lastScore sunucudan /bot/status ile geliyor
   if (ch.cooldown > 0) ch.cooldown--;
-  pickBestAndOpen();
   renderEngineGrid();
 }
 
@@ -733,20 +642,17 @@ function renderActiveSR() {
   // Position lines
   const pos = ch.position;
   if (pos) {
-    srLines.push(candleSeries.createPriceLine({ price: pos.entry, color: '#3b82f6', lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: pos.type === 'LONG' ? '▲ GİRİŞ' : '▼ GİRİŞ' }));
-    srLines.push(candleSeries.createPriceLine({ price: pos.tp, color: '#22c55e', lineWidth: 2, lineStyle: 1, axisLabelVisible: true, title: '✔ TP' }));
-    srLines.push(candleSeries.createPriceLine({ price: pos.sl, color: '#ef4444', lineWidth: 2, lineStyle: 1, axisLabelVisible: true, title: '✖ SL' }));
-    const mc = ch.klines.slice().reverse().find(k => Math.abs(k.close - pos.entry) / pos.entry < 0.003) || ch.klines[ch.klines.length-1];
-    if (mc) candleSeries.setMarkers([{ time: mc.time, position: pos.type === 'LONG' ? 'belowBar' : 'aboveBar', color: pos.type === 'LONG' ? '#22c55e' : '#ef4444', shape: pos.type === 'LONG' ? 'arrowUp' : 'arrowDown', text: pos.type === 'LONG' ? 'AL' : 'SAT', size: 2 }]);
+    srLines.push(candleSeries.createPriceLine({ price: pos.entry, color: '#3b82f6', lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: 'GİRİŞ' }));
+    srLines.push(candleSeries.createPriceLine({ price: pos.tp, color: '#22c55e', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: 'TP' }));
+    srLines.push(candleSeries.createPriceLine({ price: pos.sl, color: '#ef4444', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: 'SL' }));
   }
-  if (!pos) candleSeries.setMarkers([]);
   renderSRList(price, ch.srLevels);
 }
 
 function renderActiveAI() {
   const ch = channels[chKey()];
   if (ch.klines.length < 30) return;
-  const sig = scoreSignal(ch.klines, ch.srLevels);
+  // sig sunucudan geliyor
   const maxScore = 7;
   const strength = Math.round(Math.abs(Math.max(-maxScore, Math.min(maxScore, sig.score))) / maxScore * 5);
   let label, cls;
@@ -830,7 +736,7 @@ function renderEngineGrid() {
       </div>
       <div class="ec-score" id="ec-score-${key}">${barStr}</div>
       ${pos
-        ? `<div class="ec-pnl ${pnlCls}" id="live-pnl-${key}">${pnlLive >= 0 ? '+' : ''}$${fmt(pnlLive, 2)}</div>
+        ? `<div class="ec-pnl zero" id="live-pnl-${key}">Binance'de açık ↓</div>
            <div class="ec-detail">Giriş: $${fmt(pos.entry, dp(ch.pair))}<br>TP: $${fmt(pos.tp, dp(ch.pair))} · SL: $${fmt(pos.sl, dp(ch.pair))}${pos.breakeven ? ' <span style=\'color:#eab308;font-size:9px\'>⚡ BE</span>' : ''}<br>Risk: $${fmt(pos.risk, 2)}</div>`
         : `<div class="ec-pnl zero" id="live-pnl-${key}">—</div><div class="ec-detail">${ch.cooldown > 0 ? 'Bekleme: '+ch.cooldown+' mum' : 'Sinyal bekleniyor'}</div>`
       }
@@ -965,9 +871,7 @@ function livePnlTick() {
     Object.keys(channels).forEach(key => {
       const ch = channels[key];
       if (!ch.klines.length || ch.cooldown > 0) return;
-      const sig = scoreSignal(ch.klines, ch.srLevels);
-      ch.lastSignal = sig.type;
-      ch.lastScore = sig.score;
+      // lastSignal ve lastScore sunucudan geliyor
       if (sig.type !== 'WAIT' && (!best || Math.abs(sig.score) > Math.abs(best.sig.score))) {
         best = { ch, sig };
       }
@@ -1361,8 +1265,8 @@ async function pollServerStatus() {
         channels[key].lastSignal = srv.lastSignal;
         channels[key].lastScore  = srv.lastScore;
         channels[key].cooldown   = srv.cooldown;
-        if (srv.position) channels[key].position = srv.position;
-        else if (!channels[key].position) channels[key].position = null;
+        // Pozisyon her zaman server'dan gelir
+        channels[key].position = srv.position || null;
       }
     });
     renderEngineGrid();
@@ -1458,6 +1362,25 @@ async function fetchRealPositions() {
     const refresh = document.getElementById('pos-refresh');
     if (!data || data.error) { panel.innerHTML = '<div class="pos-empty">Sunucuya bağlanılamadı</div>'; return; }
     const open = data.filter(p => parseFloat(p.positionAmt) !== 0);
+
+    // Kanal kartlarındaki PnL'yi Binance'den gelen gerçek PnL ile güncelle
+    Object.keys(channels).forEach(key => {
+      const ch = channels[key];
+      if (!ch.position) return;
+      const binPos = open.find(p => p.symbol === ch.pair);
+      if (binPos) {
+        const realPnl = parseFloat(binPos.unRealizedProfit);
+        const el = document.getElementById(`live-pnl-${key}`);
+        if (el) {
+          el.textContent = (realPnl >= 0 ? '+' : '') + '$' + Math.abs(realPnl).toFixed(2);
+          el.className = `ec-pnl ${realPnl > 0 ? 'pos' : realPnl < 0 ? 'neg' : 'zero'}`;
+        }
+      } else {
+        // Binance'de pozisyon yok ama UI'da var — kapat
+        ch.position = null;
+      }
+    });
+
     if (open.length === 0) { panel.innerHTML = '<div class="pos-empty">Açık pozisyon yok</div>'; }
     else {
       panel.innerHTML = open.map(p => {
