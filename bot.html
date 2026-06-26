@@ -736,7 +736,7 @@ function renderEngineGrid() {
       </div>
       <div class="ec-score" id="ec-score-${key}">${barStr}</div>
       ${pos
-        ? `<div class="ec-pnl ${pnlCls}" id="live-pnl-${key}">${pnlLive >= 0 ? '+' : ''}$${fmt(pnlLive, 2)}</div>
+        ? `<div class="ec-pnl zero" id="live-pnl-${key}">Binance'de açık ↓</div>
            <div class="ec-detail">Giriş: $${fmt(pos.entry, dp(ch.pair))}<br>TP: $${fmt(pos.tp, dp(ch.pair))} · SL: $${fmt(pos.sl, dp(ch.pair))}${pos.breakeven ? ' <span style=\'color:#eab308;font-size:9px\'>⚡ BE</span>' : ''}<br>Risk: $${fmt(pos.risk, 2)}</div>`
         : `<div class="ec-pnl zero" id="live-pnl-${key}">—</div><div class="ec-detail">${ch.cooldown > 0 ? 'Bekleme: '+ch.cooldown+' mum' : 'Sinyal bekleniyor'}</div>`
       }
