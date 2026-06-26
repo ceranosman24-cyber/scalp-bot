@@ -4,23 +4,10 @@ const path      = require('path');
 const crypto    = require('crypto');
 const WebSocket = require('ws');
 
-const app        = express();
-const http       = require('http');
-const { WebSocketServer } = require('ws');
-const httpServer = http.createServer(app);
-const wss        = new WebSocketServer({ server: httpServer, path: '/ws' });
-const PORT       = process.env.PORT || 3000;
+const app  = express();
+const PORT = process.env.PORT || 3000;
 
-// WebSocket proxy — tarayıcıdan gelen bağlantıyı Binance'e ilet
-wss.on('connection', (client, req) => {
-  const stream = req.url.replace('/ws/', '');
-  const binWs  = new WebSocket(`wss://fstream.binance.com/ws/${stream}`);
-  binWs.on('message', d => { if (client.readyState === 1) client.send(d.toString()); });
-  binWs.on('close', () => { try { client.close(); } catch(_) {} });
-  client.on('close', () => { try { binWs.close(); } catch(_) {} });
-});
-
-const TN_BASE    = 'https://demo-fapi.binance.com'; // demo.binance.com API
+const TN_BASE    = 'https://demo-fapi.binance.com';
 const API_KEY    = process.env.BINANCE_API_KEY    || '';
 const API_SECRET = process.env.BINANCE_API_SECRET || '';
 const LEVERAGE   = 10;
@@ -59,16 +46,6 @@ app.options('/api/binance/*', (req, res) => {
 });
 
 // ── Bot API ───────────────────────────────────────────────────
-app.get('/bot/klines', async (req, res) => {
-  const { symbol, interval } = req.query;
-  if (!symbol || !interval) return res.json({ error: 'symbol ve interval gerekli' });
-  try {
-    const r = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=200`);
-    const data = await r.json();
-    res.json(data);
-  } catch(e) { res.json({ error: e.message }); }
-});
-
 app.get('/bot/status', (req, res) => {
   const channelData = {};
   Object.keys(channels).forEach(key => {
@@ -148,8 +125,8 @@ app.get('/bot/trades', async (req, res) => {
 const PAIRS      = ['BTCUSDT', 'ETHUSDT'];
 const TIMEFRAMES = ['1m', '3m', '5m'];
 const RISK_PCT   = 0.05;   // bakiyenin %5'i risk
-const TP_MULT    = 2.0; // 1:2 RR — TP her zaman SL'nin 2 katı
-const SL_MULT    = 1.5; // SL = 1.5x ATR
+const TP_MULT    = 2.0;
+const SL_MULT    = 1.5;
 const ATR_PERIOD = 14;
 
 let balance    = 0;   // Binance'den çekilecek
@@ -249,8 +226,8 @@ function scoreSignal(klines, srLevels) {
   if(nearSup.length){score+=2;reasons.push('Destek');}
   if(nearRes.length){score-=2;reasons.push('Direnç');}
   let type='WAIT';
-  if(score>=1.0)type='LONG';
-  if(score<=-1.0)type='SHORT';
+  if(score>=1.5)type='LONG';
+  if(score<=-1.5)type='SHORT';
   return {type,score,rsi,hist,v9,v21,reasons,price};
 }
 
@@ -286,18 +263,13 @@ async function sendOrder(ch, sig) {
   const slDist    = atr * SL_MULT;
   const tpDist    = atr * TP_MULT;
 
-  // 1:2 RR sistemi — bakiyenin %10'u risk
-  const riskUsd    = balance * 0.10;                        // örn $4200 → $420 risk
-  const atr2       = calcATR(ch.klines);
-  const slDistPct  = (atr2 * SL_MULT) / price;             // SL mesafesi yüzde olarak
-  const notional   = riskUsd / slDistPct;                   // pozisyon büyüklüğü USDT
-  const maxNotional = balance * LEVERAGE * 0.8;             // max pozisyon (margin %80)
-  const safeNotional = Math.min(notional, maxNotional);
-  const rawQty     = safeNotional / price;                  // coin adedi
-  const stepSize   = symbol.startsWith('BTC') ? 0.001 : 0.001;
-  const qty        = (Math.floor(rawQty / stepSize) * stepSize).toFixed(3);
-  console.log(`[Bot] RR Lot: risk=$${riskUsd.toFixed(0)} notional=$${safeNotional.toFixed(0)} qty=${qty} ${symbol}`);
-  if (parseFloat(qty) <= 0) { console.warn('[Bot] Lot 0, emir atlandı'); return false; }
+  // Kaldıraç 100x ile lot hesapla
+  const notional  = balance * RISK_PCT * LEVERAGE;  // pozisyon büyüklüğü
+  const rawQty    = notional / price;
+  const minQty    = Math.max(rawQty, 20/price);
+  const stepSize  = symbol.startsWith('BTC') ? 0.001 : 0.001;
+  const qty       = (Math.floor(minQty/stepSize)*stepSize).toFixed(3);
+  if (parseFloat(qty) <= 0) { console.warn('[Bot] Lot 0, emir atlandı'); return; }
 
   const tickDp = symbol.startsWith('BTC') ? 1 : 2;
   const rt = n => parseFloat(n.toFixed(tickDp)).toFixed(tickDp);
@@ -314,11 +286,11 @@ async function sendOrder(ch, sig) {
   if (!mkt) { console.error('[Bot] Market emir başarısız'); return; }
   console.log(`[Bot] ✅ Emir OK! ID:${mkt.orderId}`);
 
-  // TP emri - TAKE_PROFIT_MARKET
+  // TP emri
   const tpR = await bnRequest('POST', '/fapi/v1/order', {
     symbol, side:closeSide, type:'TAKE_PROFIT_MARKET', stopPrice:tp, closePosition:'true',
   });
-  // SL emri - STOP_MARKET
+  // SL emri
   const slR = await bnRequest('POST', '/fapi/v1/order', {
     symbol, side:closeSide, type:'STOP_MARKET', stopPrice:sl, closePosition:'true',
   });
@@ -333,7 +305,6 @@ async function sendOrder(ch, sig) {
   };
   if (tpR) console.log(`[Bot] 🎯 TP: $${tp}`);
   if (slR) console.log(`[Bot] 🛡 SL: $${sl}`);
-  return true; // başarılı
 }
 
 // Açık emirleri iptal et (pozisyon kapanınca)
@@ -347,103 +318,73 @@ async function cancelOpenOrders(chKey) {
 }
 
 // ── Trading engine ────────────────────────────────────────────
-// Binance'deki gerçek açık pozisyon sayısı
-let binanceOpenPositions = 0;
-function hasAnyOpenPosition() { 
-  return binanceOpenPositions > 0 || Object.values(channels).some(c=>c.position); 
-}
+function hasAnyOpenPosition() { return Object.values(channels).some(c=>c.position); }
 
-async function openPosition(ch, sig) {
+function openPosition(ch, sig) {
   console.log(`[Bot] openPosition çağrıldı: ${ch.pair} ${sig.type} balance=$${balance.toFixed(2)}`);
   if (balance <= 0) return;
   const atr     = calcATR(ch.klines);
-  const riskUsd = balance * RISK_PCT;
   const price   = sig.price;
   const slDist  = atr * SL_MULT;
   const tpDist  = atr * TP_MULT;
-  const qty     = riskUsd / slDist;
+  const riskUsd = balance * 0.10;
+  const slPct   = slDist / price;
+  const notional= Math.min(riskUsd / slPct, balance * LEVERAGE * 0.5);
+  const rawQty  = notional / price;
+  const qty     = (Math.floor(rawQty / 0.001) * 0.001).toFixed(3);
+  console.log(`[Bot] Lot: qty=${qty} risk=$${riskUsd.toFixed(0)} notional=$${notional.toFixed(0)}`);
   const sl = sig.type==='LONG' ? price-slDist : price+slDist;
   const tp = sig.type==='LONG' ? price+tpDist : price-tpDist;
-
-  // Önce Binance'e gönder, başarılıysa pozisyon kaydet
-  const success = await sendOrder(ch, sig);
-  if (!success) {
-    console.error(`[Bot] ❌ Binance emir başarısız, pozisyon AÇILMADI: ${ch.pair}`);
-    return;
-  }
   ch.position = { type:sig.type, entry:price, qty, sl, tp, risk:riskUsd, breakeven:false, ts:new Date().toLocaleTimeString('tr-TR') };
   console.log(`[Bot] 🟢 ${ch.pair} ${sig.type} @ $${price.toFixed(2)} | SL:${sl.toFixed(2)} TP:${tp.toFixed(2)}`);
+  sendOrder(ch, sig);  // Binance'e gönder
 }
 
-async function checkPositionFromBinance() {
-  // Binance'deki tüm açık pozisyonları say
-  try {
-    const all = await bnRequest('GET', '/fapi/v2/positionRisk', {});
-    if (Array.isArray(all)) {
-      binanceOpenPositions = all.filter(p => parseFloat(p.positionAmt) !== 0).length;
-    }
-  } catch(e) {}
-  for (const key of Object.keys(channels)) {
-    const ch = channels[key];
-    if (!ch.position) continue;
-    try {
-      const positions = await bnRequest('GET', '/fapi/v2/positionRisk', {});
-      if (!Array.isArray(positions)) continue;
-      const openPos = positions.find(p => p.symbol === ch.pair && parseFloat(p.positionAmt) !== 0);
-      if (!openPos) {
-        // Pozisyon kapanmış (TP veya SL tetiklendi)
-        console.log(`[Bot] 🔴 ${ch.pair} pozisyon kapandı (Binance teyidi)`);
-        tradeCount++;
-        tradeLog.unshift({ pair:ch.pair, tf:ch.tf, type:ch.position.type, entry:ch.position.entry, ts:ch.position.ts });
-        if (tradeLog.length > 60) tradeLog.pop();
-        const chKey = `${ch.pair}_${ch.tf}`;
-        await cancelOpenOrders(chKey);
-        ch.position = null; ch.cooldown = 3;
-        // Bakiyeyi Binance'den güncelle
-        const acc = await bnRequest('GET', '/fapi/v2/account', {});
-        if (acc) { const usdt=(acc.assets||[]).find(a=>a.asset==='USDT'); if(usdt) { balance=parseFloat(usdt.walletBalance); console.log(`[Bot] 💰 Güncel bakiye: $${balance.toFixed(2)}`); } }
-      } else {
-        const upnl = parseFloat(openPos.unRealizedProfit);
-        console.log(`[Bot] 📊 ${ch.pair} açık pozisyon | uPnL: ${upnl>=0?'+':''}$${upnl.toFixed(2)}`);
-      }
-    } catch(e) { console.error('[checkPos]', e.message); }
+function checkPosition(ch, currentPrice) {
+  if (!ch.position) return;
+  const pos = ch.position;
+  let closed=false, pnl=0, exitPrice=currentPrice;
+  if (!pos.breakeven) {
+    const beReached = pos.type==='LONG'
+      ? currentPrice >= pos.entry+(pos.tp-pos.entry)*0.5
+      : currentPrice <= pos.entry-(pos.entry-pos.tp)*0.5;
+    if (beReached) { pos.sl=pos.entry; pos.breakeven=true; }
+  }
+  if (pos.type==='LONG') {
+    if (currentPrice>=pos.tp)      { pnl=pos.risk*TP_MULT; exitPrice=pos.tp; closed=true; }
+    else if (currentPrice<=pos.sl) { pnl=pos.breakeven?0:-pos.risk; exitPrice=pos.sl; closed=true; }
+  } else {
+    if (currentPrice<=pos.tp)      { pnl=pos.risk*TP_MULT; exitPrice=pos.tp; closed=true; }
+    else if (currentPrice>=pos.sl) { pnl=pos.breakeven?0:-pos.risk; exitPrice=pos.sl; closed=true; }
+  }
+  if (closed) {
+    balance = Math.max(0, balance+pnl);
+    totalPnl+=pnl; tradeCount++; if(pnl>0)wins++;
+    tradeLog.unshift({ pair:ch.pair, tf:ch.tf, type:pos.type, entry:pos.entry, exit:exitPrice, pnl, ts:pos.ts, be:pos.breakeven||false });
+    if (tradeLog.length>60) tradeLog.pop();
+    const chKey = `${ch.pair}_${ch.tf}`;
+    cancelOpenOrders(chKey);  // Kalan emirleri iptal et
+    ch.position=null; ch.cooldown=3;
+    console.log(`[Bot] 🔴 ${ch.pair} kapandı | PnL: ${pnl>=0?'+':''}$${pnl.toFixed(2)}`);
   }
 }
 
-
 function pickBestAndOpen() {
-  console.log(`[Bot] pickBest çalıştı — botRunning:${botRunning} açıkPozisyon:${hasAnyOpenPosition()} balance:$${balance.toFixed(2)}`);
+  console.log(`[Bot] pickBest çalıştı — botRunning:${botRunning} açıkPozisyon:${hasAnyOpenPosition()}`);
   if (!botRunning || hasAnyOpenPosition()) return;
   let best=null;
   Object.values(channels).forEach(ch => {
-    const chKey = `${ch.pair}_${ch.tf}`;
-    if (ch.position) { console.log(`[Bot] ${chKey} — pozisyon var, atlandı`); return; }
-    if (ch.cooldown>0) { console.log(`[Bot] ${chKey} — cooldown:${ch.cooldown}, atlandı`); return; }
-    if (ch.klines.length<30) { console.log(`[Bot] ${chKey} — yetersiz kline:${ch.klines.length}, atlandı`); return; }
+    if (ch.position||ch.cooldown>0||ch.klines.length<30) return;
     const sig=scoreSignal(ch.klines,ch.srLevels);
     ch.lastSignal=sig.type; ch.lastScore=sig.score;
-    console.log(`[Bot] ${chKey} — score:${sig.score.toFixed(2)} signal:${sig.type} RSI:${sig.rsi?.toFixed(1)} reasons:[${sig.reasons?.join(',')}]`);
     if (sig.type==='WAIT') return;
     if (!best||Math.abs(sig.score)>Math.abs(best.sig.score)) best={ch,sig};
   });
-  if (best) {
-    console.log(`[Bot] 🏆 En iyi sinyal: ${best.ch.pair}_${best.ch.tf} ${best.sig.type} score:${best.sig.score.toFixed(2)}`);
-    openPosition(best.ch, best.sig);
-  } else {
-    console.log(`[Bot] ⏳ Hiçbir kanaldan LONG/SHORT sinyali yok`);
-  }
+  if (best) openPosition(best.ch, best.sig);
 }
 
 // ── Kline & WebSocket ─────────────────────────────────────────
 async function fetchKlines(ch) {
-  // REST API erişimi yoksa WS'den birikiyor, log bas
-  if (ch.klines.length > 0) {
-    const {supports,resistances}=calcSRLevels(ch.klines);
-    ch.srLevels=[...supports.map(s=>({...s,type:'support'})),...resistances.map(r=>({...r,type:'resist'}))];
-    console.log(`[fetchKlines] WS kline: ${ch.pair} ${ch.tf} — ${ch.klines.length} kline`);
-    return;
-  }
-  // REST dene
   const urls = [
     `https://fapi.binance.com/fapi/v1/klines?symbol=${ch.pair}&interval=${ch.tf}&limit=200`,
     `https://api.binance.com/api/v3/klines?symbol=${ch.pair}&interval=${ch.tf}&limit=200`,
@@ -456,19 +397,16 @@ async function fetchKlines(ch) {
       ch.klines = data.map(k=>({ time:Math.floor(k[0]/1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]), volume:parseFloat(k[5]) }));
       const {supports,resistances}=calcSRLevels(ch.klines);
       ch.srLevels=[...supports.map(s=>({...s,type:'support'})),...resistances.map(r=>({...r,type:'resist'}))];
-      console.log(`[fetchKlines] REST OK ${ch.pair} ${ch.tf} — ${ch.klines.length} kline`);
+      console.log(`[fetchKlines] OK ${ch.pair} ${ch.tf} — ${ch.klines.length} kline`);
       return;
-    } catch(e) {}
+    } catch(e) { console.error(`[fetchKlines] HATA ${ch.pair} ${ch.tf}:`, e.message); }
   }
-  console.warn(`[fetchKlines] ${ch.pair} ${ch.tf} — REST yok, WS birikmesi bekleniyor (${ch.klines.length} kline)`);
 }
 
 function connectWS(key) {
   const ch=channels[key];
   if (ch.ws) { try { ch.ws.terminate(); } catch(_) {} }
-  const wsUrl = `wss://fstream.binance.com/ws/${ch.pair.toLowerCase()}@kline_${ch.tf}`;
-  console.log(`[WS] Bağlanıyor: ${wsUrl}`);
-  const ws=new WebSocket(wsUrl);
+  const ws=new WebSocket(`wss://fstream.binance.com/ws/${ch.pair.toLowerCase()}@kline_${ch.tf}`);
   ch.ws=ws;
   ws.on('message',(raw)=>{
     try {
@@ -479,8 +417,7 @@ function connectWS(key) {
       const last=ch.klines[ch.klines.length-1];
       if (last&&last.time===candle.time) ch.klines[ch.klines.length-1]=candle;
       else { ch.klines.push(candle); if(ch.klines.length>500)ch.klines.shift(); }
-      if ([10,30,50,100,200].includes(ch.klines.length)) console.log(`[WS] ${key} kline birikiyor: ${ch.klines.length}`);
-      // pozisyon takibi checkPositionFromBinance interval ile yapılıyor
+      checkPosition(ch,candle.close);
       if (k.x) {
         const {supports,resistances}=calcSRLevels(ch.klines);
         ch.srLevels=[...supports.map(s=>({...s,type:'support'})),...resistances.map(r=>({...r,type:'resist'}))];
@@ -509,9 +446,8 @@ async function startBot() {
     console.log('⚠️  API Key yok — sinyal modu');
     balance = 1000;
   }
-  // REST erişimi yoksa WS'den kline birikir, doğrudan WS başlat
+  await Promise.all(Object.keys(channels).map(key=>fetchKlines(channels[key])));
   Object.keys(channels).forEach(key=>connectWS(key));
-  console.log('[Bot] WebSocket bağlantıları başlatıldı, kline birikimi başlıyor...');
   setInterval(async ()=>{
     await Promise.all(Object.keys(channels).map(key=>fetchKlines(channels[key])));
     pickBestAndOpen();
@@ -522,9 +458,7 @@ async function startBot() {
     const acc=await bnRequest('GET','/fapi/v2/account',{});
     if (acc) { const usdt=(acc.assets||[]).find(a=>a.asset==='USDT'); if(usdt) balance=parseFloat(usdt.walletBalance); }
   }, 60000);
-  // Pozisyon takibi — her 10sn Binance'den kontrol et
-  setInterval(()=>checkPositionFromBinance(), 10000);
   console.log(`✅ Bot çalışıyor — ${Object.keys(channels).length} kanal | Kaldıraç: ${LEVERAGE}x`);
 }
 
-httpServer.listen(PORT, () => { console.log(`🌐 Sunucu: http://localhost:${PORT}`); startBot(); });
+app.listen(PORT, () => { console.log(`🌐 Sunucu: http://localhost:${PORT}`); startBot(); });
