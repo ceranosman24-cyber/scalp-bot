@@ -288,11 +288,11 @@ async function sendOrder(ch, sig) {
 
   // TP emri
   const tpR = await bnRequest('POST', '/fapi/v1/order', {
-    symbol, side:closeSide, type:'TAKE_PROFIT_MARKET', stopPrice:tp, closePosition:'true',
+    symbol, side:closeSide, type:'LIMIT', price:tp, quantity:qty, timeInForce:'GTC', reduceOnly:'true',
   });
   // SL emri
   const slR = await bnRequest('POST', '/fapi/v1/order', {
-    symbol, side:closeSide, type:'STOP_MARKET', stopPrice:sl, closePosition:'true',
+    symbol, side:closeSide, type:'STOP', price:sl, stopPrice:sl, quantity:qty, timeInForce:'GTC', reduceOnly:'true',
   });
 
   // Açık emir ID'lerini sakla (pozisyon kapanınca iptal için)
