@@ -514,4 +514,4 @@ async function startBot() {
   console.log(`✅ Bot çalışıyor — ${Object.keys(channels).length} kanal | Kaldıraç: ${LEVERAGE}x`);
 }
 
-app.listen(PORT, () => { console.log(`🌐 Sunucu: http://localhost:${PORT}`); startBot(); });
+httpServer.listen(PORT, () => { console.log(`🌐 Sunucu: http://localhost:${PORT}`); startBot(); });
