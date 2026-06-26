@@ -46,6 +46,16 @@ app.options('/api/binance/*', (req, res) => {
 });
 
 // ── Bot API ───────────────────────────────────────────────────
+app.get('/bot/klines', async (req, res) => {
+  const { symbol, interval } = req.query;
+  if (!symbol || !interval) return res.json({ error: 'symbol ve interval gerekli' });
+  try {
+    const r = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=200`);
+    const data = await r.json();
+    res.json(data);
+  } catch(e) { res.json({ error: e.message }); }
+});
+
 app.get('/bot/status', (req, res) => {
   const channelData = {};
   Object.keys(channels).forEach(key => {

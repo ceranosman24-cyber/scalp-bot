@@ -518,7 +518,7 @@ function checkPosition(ch, currentPrice) {
 async function fetchChannelKlines(key) {
   const ch = channels[key];
   try {
-    const url = `https://api.binance.com/api/v3/klines?symbol=${ch.pair}&interval=${ch.tf}&limit=200`;
+    const url = `/bot/klines?symbol=${ch.pair}&interval=${ch.tf}`;
     const r = await fetch(url);
     const data = await r.json();
     if (!Array.isArray(data)) return;
